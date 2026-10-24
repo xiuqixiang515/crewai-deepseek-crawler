@@ -14,6 +14,7 @@ class ReportState(BaseModel):
     urls: str = ""
     output_file: str = ""
     report_chars: int = 0
+    prefetch: bool = True
 
 
 class ReportFlow(Flow[ReportState]):
@@ -36,7 +37,7 @@ class ReportFlow(Flow[ReportState]):
     @listen(prepare)
     def run_crew(self, urls: str) -> str:
         print("[flow] 进入 Crew：研究员抓取 -> 撰稿人成稿")
-        crew, inputs = build_crew(urls, self.state.output_file)
+        crew, inputs = build_crew(urls, self.state.output_file, prefetch=self.state.prefetch)
         result = crew.kickoff(inputs=inputs)
         text = getattr(result, "raw", str(result))
         self.state.report_chars = len(text or "")
@@ -62,12 +63,13 @@ class ReportFlow(Flow[ReportState]):
         return self.state.output_file
 
 
-def run_flow(urls: str, output_file: str | Path | None = None) -> str:
+def run_flow(urls: str, output_file: str | Path | None = None, prefetch: bool = True) -> str:
     flow = ReportFlow()
     flow.kickoff(
         inputs={
             "urls": urls,
             "output_file": str(output_file) if output_file else "",
+            "prefetch": prefetch,
         }
     )
     return flow.state.output_file

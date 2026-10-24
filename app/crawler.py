@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import re
+from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass
 from pathlib import Path
 from urllib.parse import urlparse
@@ -12,6 +13,9 @@ from bs4 import BeautifulSoup
 
 DEFAULT_MAX_CHARS = 8000
 DEFAULT_TIMEOUT = 20
+DEFAULT_WORKERS = 4
+DEFAULT_TOTAL_CHARS = 12000
+MIN_PER_PAGE_CHARS = 1500
 
 USER_AGENT = (
     "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 "
@@ -51,6 +55,14 @@ class Page:
             f"抓取字符数: {self.chars}{note}\n"
             f"---- 正文开始 ----\n{self.text}\n---- 正文结束 ----"
         )
+
+
+@dataclass
+class CrawlFailure:
+    """抓取失败的结果，和 Page 一起组成 crawl_many 的返回值。"""
+
+    url: str
+    reason: str
 
 
 def _read_html(target: str) -> tuple[str, str]:
@@ -128,3 +140,67 @@ def crawl(target: str, max_chars: int = DEFAULT_MAX_CHARS) -> Page:
         chars=len(text),
         truncated=truncated,
     )
+
+
+def parse_urls(text: str) -> list[str]:
+    """把多行文本（可带 - / * 前缀）解析成去重后的网址列表。"""
+    urls: list[str] = []
+    for line in (text or "").splitlines():
+        item = line.strip().lstrip("-*").strip()
+        if not item or item.startswith("#"):
+            continue
+        if item not in urls:
+            urls.append(item)
+    return urls
+
+
+def _crawl_safe(target: str, max_chars: int) -> Page | CrawlFailure:
+    try:
+        return crawl(target, max_chars=max_chars)
+    except Exception as exc:  # 并发场景下统一收敛成结果对象，不让异常穿透线程池
+        return CrawlFailure(url=target, reason=f"{type(exc).__name__}: {exc}")
+
+
+def crawl_many(
+    targets: list[str],
+    total_chars: int = DEFAULT_TOTAL_CHARS,
+    workers: int = DEFAULT_WORKERS,
+) -> list[Page | CrawlFailure]:
+    """并发抓取多个网址，结果顺序与输入一致。
+
+    total_chars 是所有页面共享的正文预算，按链接数均摊，
+    避免 10 个链接一口气塞进 8 万字符把上下文撑爆。
+    """
+    urls = [u for u in targets if u and u.strip()]
+    if not urls:
+        return []
+
+    per_page = max(MIN_PER_PAGE_CHARS, total_chars // len(urls))
+    workers = max(1, min(workers, len(urls)))
+
+    with ThreadPoolExecutor(max_workers=workers) as pool:
+        return list(pool.map(lambda u: _crawl_safe(u, per_page), urls))
+
+
+def render_material(results: list[Page | CrawlFailure]) -> str:
+    """把并发抓取结果拼成给 Agent 阅读的材料块。"""
+    blocks: list[str] = []
+    for idx, item in enumerate(results, 1):
+        if isinstance(item, CrawlFailure):
+            blocks.append(
+                f"【来源 {idx}】抓取失败\n链接: {item.url}\n原因: {item.reason}"
+            )
+            continue
+        note = "（正文已截断）" if item.truncated else ""
+        blocks.append(
+            f"【来源 {idx}】{item.title or '(无标题)'}\n"
+            f"链接: {item.url}\n"
+            f"正文（{item.chars} 字符{note}）:\n{item.text}"
+        )
+    return "\n\n".join(blocks)
+
+
+def summarize(results: list[Page | CrawlFailure]) -> tuple[int, int]:
+    """返回 (成功数, 失败数)。"""
+    ok = sum(1 for r in results if isinstance(r, Page))
+    return ok, len(results) - ok

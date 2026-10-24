@@ -4,6 +4,7 @@
     python main.py demo                      # 不需要 API Key，只测爬虫（默认抓本地样例）
     python main.py demo --url https://...    # 抓真实网页，验证网络与解析
     python main.py crew --url https://a --url https://b
+    python main.py crew --url https://a --structured      # 输出结构化 JSON
     python main.py flow --url https://a --url https://b
 """
 
@@ -23,6 +24,7 @@ for stream in (sys.stdout, sys.stderr):
 ROOT = Path(__file__).resolve().parent
 SAMPLE = ROOT / "samples" / "sample_article.html"
 DEFAULT_OUT = ROOT / "output" / "report.md"
+DEFAULT_JSON = ROOT / "output" / "report.json"
 
 
 def _collect_urls(args) -> list[str]:
@@ -64,24 +66,47 @@ def cmd_demo(args) -> int:
 
 
 def cmd_crew(args) -> int:
-    from app.crew_def import build_crew
+    from app.crew_def import build_crew, save_structured
+    from app.models import Report
 
     urls = _collect_urls(args)
     if not urls:
         print("[错误] 至少给一个 --url，或用 --urls-file 指定列表文件")
         return 2
 
-    out = Path(args.out) if args.out else DEFAULT_OUT
-    crew, inputs = build_crew(_to_input(urls), out, temperature=args.temp)
+    structured_model = Report if args.structured else None
 
-    print(f"模型: {args.model_hint}")
-    print(f"目标链接 {len(urls)} 个，报告将写入 {out}\n")
+    default_out = DEFAULT_JSON if args.structured else DEFAULT_OUT
+    out = Path(args.out) if args.out else default_out
+
+    crew, inputs = build_crew(
+        _to_input(urls),
+        out,
+        temperature=args.temp,
+        prefetch=not args.no_prefetch,
+        structured_model=structured_model,
+        workers=args.workers,
+        total_chars=args.total_chars,
+    )
+
+    mode = "结构化 JSON" if args.structured else "Markdown"
+    print("模型: deepseek/deepseek-chat（DEEPSEEK_MODEL 可覆盖）")
+    print(f"抓取方式: {'并发预取' if not args.no_prefetch else 'Agent 逐个调用工具'}")
+    print(f"输出形态: {mode} | 目标链接 {len(urls)} 个 | 写入 {out}\n")
+
     result = crew.kickoff(inputs=inputs)
 
     print("\n" + "=" * 68)
-    print(getattr(result, "raw", str(result)))
+    if args.structured:
+        report = save_structured(result, out, Report)
+        print(f"标题: {report.title}")
+        print(f"摘要: {report.summary}")
+        print(f"要点: {len(report.key_points)} 条 | 小节: {len(report.sections)} 段 | 来源: {len(report.sources)} 个")
+        print(f"对比: {report.comparison[:120]}")
+    else:
+        print(getattr(result, "raw", str(result)))
     print("=" * 68)
-    print(f"报告文件: {out}")
+    print(f"输出文件: {out}")
     return 0
 
 
@@ -94,7 +119,7 @@ def cmd_flow(args) -> int:
         return 2
 
     out = Path(args.out) if args.out else DEFAULT_OUT
-    final_path = run_flow(_to_input(urls), out)
+    final_path = run_flow(_to_input(urls), out, prefetch=not args.no_prefetch)
 
     print("\n" + "=" * 68)
     print(f"Flow 执行完毕，报告文件: {final_path}")
@@ -111,7 +136,10 @@ def build_parser() -> argparse.ArgumentParser:
     def add_common(p: argparse.ArgumentParser) -> None:
         p.add_argument("--url", action="append", help="要处理的网址，可重复多次")
         p.add_argument("--urls-file", help="网址列表文件，每行一个，# 开头为注释")
-        p.add_argument("--out", help="报告输出路径，默认 output/report.md")
+        p.add_argument("--out", help="输出路径，默认 output/report.md（结构化模式为 report.json）")
+        p.add_argument("--workers", type=int, default=4, help="并发抓取的线程数，默认 4")
+        p.add_argument("--total-chars", type=int, default=12000, help="所有链接共享的正文总预算，默认 12000")
+        p.add_argument("--no-prefetch", action="store_true", help="关闭并发预取，退回 Agent 逐个调用工具")
 
     p_demo = sub.add_parser("demo", help="只测爬虫，不需要 API Key")
     p_demo.add_argument("--url", action="append", help="要抓的网址，默认用本地样例")
@@ -122,7 +150,8 @@ def build_parser() -> argparse.ArgumentParser:
     p_crew = sub.add_parser("crew", help="跑完整 Crew（需要 DEEPSEEK_API_KEY）")
     add_common(p_crew)
     p_crew.add_argument("--temp", type=float, default=0.3, help="采样温度，默认 0.3")
-    p_crew.set_defaults(func=cmd_crew, model_hint="deepseek/deepseek-chat（可用 DEEPSEEK_MODEL 覆盖）")
+    p_crew.add_argument("--structured", action="store_true", help="改用 Pydantic 结构化输出，写入 JSON")
+    p_crew.set_defaults(func=cmd_crew)
 
     p_flow = sub.add_parser("flow", help="跑 Flow 包裹的 Crew（需要 DEEPSEEK_API_KEY）")
     add_common(p_flow)
