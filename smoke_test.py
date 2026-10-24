@@ -88,4 +88,24 @@ cases = [
 assert [_extract_json(c)["title"] for c in cases] == ["a", "b", "c"]
 print("裸 JSON / 代码块 / 带前后文 三种都能解析")
 
+print("[11] 轨迹与可视化：", end=" ")
+from app.trace import RunTrace
+from app.viz import render_html
+
+tr = RunTrace(meta={"mode": "prefetch", "workers": 2, "total_chars": 4000})
+tr.add("crawl_start", url="https://a.com/x", index=1)
+tr.add("crawl_end", url="https://a.com/x", index=1, ok=True, chars=1000, duration=1.2)
+tr.add("crawl_start", url="https://b.com/y", index=2)
+tr.add("crawl_end", url="https://b.com/y", index=2, ok=False, chars=0, duration=0.4, error="Timeout")
+tr.add("crew_start")
+tr.add("task_end", name="研究", agent="研究员", chars=500)
+tr.add("task_end", name="报告", agent="撰稿人", chars=900)
+
+page = render_html(tr.to_dict(), "output/_viz_smoke.html")
+html_text = page.read_text(encoding="utf-8")
+assert "一次运行的全过程" in html_text
+assert html_text.count('rx="4"') >= 4, "时间线条形缺失"
+assert tr.summary()["links"] == 2 and tr.summary()["failed"] == 1
+print(f"{len(html_text)} 字符 HTML，含 2 条抓取 + 2 段 Agent")
+
 print("\n全部通过：项目结构可用，缺的只是真实 API Key。")
