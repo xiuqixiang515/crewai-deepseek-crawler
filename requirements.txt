@@ -1,0 +1,6 @@
+# 本项目在 crewai 1.15.30 上验证通过（Python 3.13 / Windows）
+# 国内装依赖建议加镜像：-i https://pypi.tuna.tsinghua.edu.cn/simple
+crewai>=1.15.30,<2.0
+requests>=2.31
+beautifulsoup4>=4.12
+python-dotenv>=1.0
