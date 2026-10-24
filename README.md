@@ -18,6 +18,8 @@ crewai-deepseek-crawler/
 │   ├── agents.py         # 两个角色：研究员 + 撰稿人
 │   ├── tasks.py          # 两个任务：整理材料 + 成稿
 │   ├── crew_def.py       # 组装 Crew，并在这里做并发预取
+│   ├── trace.py          # 运行轨迹记录：抓取与 Agent 的耗时点
+│   ├── viz.py            # 把轨迹渲染成自包含 HTML 时间线
 │   └── flow_def.py       # 用 Flow 包一层：入口校验 → Crew → 质量闸门
 ├── samples/
 │   └── sample_article.html   # 离线样例，用来验证爬虫不用联网
@@ -133,6 +135,43 @@ python main.py flow --url https://example.com
 
 > 一次传很多链接时，把它们写进一个 txt（每行一个，`#` 开头是注释），然后 `--urls-file urls.txt`。
 
+## 可视化
+
+分两层，都不引入新依赖。
+
+**① 终端实时进度** —— 每条抓取带时间戳，能直接看出并发有没有生效：
+
+```
+[   0.0s] [1/2] 请求 https://www.ruanyifeng.com/blog/2024/01/...
+[   0.0s] [2/2] 请求 https://www.ruanyifeng.com/blog/2024/03/...
+[   1.1s] [1/2] 完成 6000 字符 / 1.1s
+[   1.8s] [2/2] 完成 5073 字符 / 1.8s
+[prefetch] 2 个链接并发抓取完成：2 成功 / 0 失败，用时 1.8s（正文合计 11073 字符）
+```
+
+**② HTML 时间线** —— `crew` 跑完自动生成 `output/run.html`，同时落一份 `output/run.json`：
+
+- **时间线**：每个网址一条横条，起点都对齐在 0 秒。串行模式下条形会首尾相接，并发模式下会重叠 —— 这是最直观的对照。
+- **链路图**：输入 → 抓取 → 研究员 → 撰稿人 → 产物，每段带上耗时。
+- **明细表**：状态、耗时、字符数、失败原因。
+- 单文件、无 CDN，双击就能看，也可以直接发给别人。
+
+**零成本试看**（不需要 API Key）：
+
+```bash
+python main.py demo \
+  --url https://www.ruanyifeng.com/blog/2024/01/weekly-issue-285.html \
+  --url https://www.ruanyifeng.com/blog/2024/03/weekly-issue-293.html \
+  --url https://example.com
+# 生成 output/demo_timeline.html
+```
+
+**改样式后重新出图**（不用重跑，省 token）：
+
+```bash
+python main.py viz --input output/run.json --out output/run.html
+```
+
 ## 关键设计说明
 
 **为什么爬虫和工具分成两个文件？**
@@ -151,6 +190,12 @@ CrewAI 里最影响成稿质量的不是模型，是 `Task.description` 和 `exp
 
 **为什么预取的正文可以安全地塞进任务描述？**
 CrewAI 的 `interpolate_only` 是「先扫描模板里的 `{变量}`，再 `str.replace`」，插入的值不会被二次解析。所以正文里出现花括号（代码片段里很常见）也不会炸。前提是模板里只写 `{material}`，不要让正文自己当模板。
+
+**为什么轨迹用模块级单例？**
+爬虫有两条调用路径：并发预取走 `crawl_many`，退回工具模式走 `crawl_webpage`。两条都要落进同一条时间线，把 trace 一路当参数传会污染所有函数签名。`trace.set_active()` 在 `build_crew` 里设置一次即可。
+
+**为什么时间线的行序不等于完成顺序？**
+抓取是并发的，谁先完成谁先结束。轨迹里给每个任务带了 `index`，配对时按 index 排序，保证图和表的编号与输入顺序一致 —— 否则读者会对不上号。
 
 **为什么不用 `memory=True`？**
 CrewAI 的短期记忆默认要调 embedding 接口，会额外产生费用和失败点。这个项目的任务是一次性的，不需要记忆。要开的话记得配 embedding 模型。
