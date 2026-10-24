@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from crewai.tools import tool
 
-from .crawler import DEFAULT_MAX_CHARS, crawl
+from .crawler import DEFAULT_MAX_CHARS, CrawlFailure, crawl_safe
 
 
 @tool("crawl_webpage")
@@ -23,13 +23,12 @@ def crawl_webpage(url: str) -> str:
     if not target:
         return "[抓取失败] url 为空，请传入完整的 http(s) 链接。"
 
-    try:
-        page = crawl(target, max_chars=DEFAULT_MAX_CHARS)
-    except Exception as exc:  # 工具里不要抛异常，返回文本让 LLM 自己决策
+    result = crawl_safe(target, DEFAULT_MAX_CHARS)
+    if isinstance(result, CrawlFailure):
         return (
-            f"[抓取失败] {target}\n"
-            f"原因: {type(exc).__name__}: {exc}\n"
+            f"[抓取失败] {result.url}\n"
+            f"原因: {result.reason}\n"
             "建议: 检查链接是否可公开访问；若页面需要登录或由 JS 渲染，请换一个来源。"
         )
 
-    return page.to_prompt()
+    return result.to_prompt()

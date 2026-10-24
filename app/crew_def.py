@@ -10,6 +10,7 @@ from pathlib import Path
 from crewai import Crew, Process
 from pydantic import ValidationError
 
+from . import trace as trace_mod
 from .agents import build_agents
 from .crawler import (
     DEFAULT_TOTAL_CHARS,
@@ -35,13 +36,26 @@ def build_crew(
     structured_model: type | None = None,
     workers: int = DEFAULT_WORKERS,
     total_chars: int = DEFAULT_TOTAL_CHARS,
+    trace: trace_mod.RunTrace | None = None,
 ) -> tuple[Crew, dict]:
     """返回 (crew, inputs)。
 
     prefetch=True 时先并发抓完所有链接，把正文作为 material 注入任务，
     Agent 不再逐个调用工具，LLM 往返从 N 次降到 2 次。
     structured_model 传入 Pydantic 模型时，撰稿人改用 json_object 模式输出。
+    trace 用于收集时间线，供终端进度与 HTML 可视化使用。
     """
+    tr = trace or trace_mod.RunTrace()
+    trace_mod.set_active(tr)
+    tr.meta.update(
+        {
+            "mode": "prefetch" if prefetch else "tools",
+            "structured": structured_model is not None,
+            "workers": workers,
+            "total_chars": total_chars,
+        }
+    )
+
     structured = structured_model is not None
     out_path = Path(output_file) if output_file else (DEFAULT_JSON if structured else DEFAULT_OUTPUT)
     out_path.parent.mkdir(parents=True, exist_ok=True)
@@ -78,6 +92,7 @@ def build_crew(
         process=Process.sequential,
         verbose=True,
         memory=False,
+        task_callback=tr.task_callback,
     )
     return crew, {"urls": urls, "material": material}
 

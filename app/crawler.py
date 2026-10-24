@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import re
+import time
 from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass
 from pathlib import Path
@@ -10,6 +11,8 @@ from urllib.parse import urlparse
 
 import requests
 from bs4 import BeautifulSoup
+
+from . import trace
 
 DEFAULT_MAX_CHARS = 8000
 DEFAULT_TIMEOUT = 20
@@ -154,10 +157,38 @@ def parse_urls(text: str) -> list[str]:
     return urls
 
 
-def _crawl_safe(target: str, max_chars: int) -> Page | CrawlFailure:
+def crawl_safe(target: str, max_chars: int, index: int = 0) -> Page | CrawlFailure:
+    """抓取并把结果/耗时写进当前轨迹，失败收敛成 CrawlFailure 不抛异常。
+
+    index 只用于可视化里的排序与编号，保持与输入顺序一致。
+    """
+    tr = trace.get_active()
+    started = time.perf_counter()
+    if tr:
+        tr.add("crawl_start", url=target, index=index)
     try:
-        return crawl(target, max_chars=max_chars)
+        page = crawl(target, max_chars=max_chars)
+        if tr:
+            tr.add(
+                "crawl_end",
+                url=target,
+                index=index,
+                ok=True,
+                chars=page.chars,
+                duration=round(time.perf_counter() - started, 3),
+            )
+        return page
     except Exception as exc:  # 并发场景下统一收敛成结果对象，不让异常穿透线程池
+        if tr:
+            tr.add(
+                "crawl_end",
+                url=target,
+                index=index,
+                ok=False,
+                chars=0,
+                duration=round(time.perf_counter() - started, 3),
+                error=f"{type(exc).__name__}: {exc}"[:120],
+            )
         return CrawlFailure(url=target, reason=f"{type(exc).__name__}: {exc}")
 
 
@@ -177,9 +208,23 @@ def crawl_many(
 
     per_page = max(MIN_PER_PAGE_CHARS, total_chars // len(urls))
     workers = max(1, min(workers, len(urls)))
+    total = len(urls)
+
+    def _job(item: tuple[int, str]) -> Page | CrawlFailure:
+        idx, url = item
+        short = url if len(url) <= 58 else url[:55] + "..."
+        trace.progress(f"[{idx}/{total}] 请求 {short}")
+        started = time.perf_counter()
+        result = crawl_safe(url, per_page, index=idx)
+        elapsed = time.perf_counter() - started
+        if isinstance(result, Page):
+            trace.progress(f"[{idx}/{total}] 完成 {result.chars} 字符 / {elapsed:.1f}s")
+        else:
+            trace.progress(f"[{idx}/{total}] 失败 {elapsed:.1f}s -> {result.reason[:50]}")
+        return result
 
     with ThreadPoolExecutor(max_workers=workers) as pool:
-        return list(pool.map(lambda u: _crawl_safe(u, per_page), urls))
+        return list(pool.map(_job, enumerate(urls, 1)))
 
 
 def render_material(results: list[Page | CrawlFailure]) -> str:
