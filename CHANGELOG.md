@@ -9,8 +9,37 @@
 
 ### 计划中
 - 接入搜索工具（Serper / Bocha / Tavily），让研究员自主发现链接，而非依赖用户提供
-- 并发抓取，缩短多链接场景的总耗时
-- 报告 Task 改为 `output_pydantic` 结构化输出，便于入库
+- 预取失败的链接支持指数退避重试
+- PDF 与微信公众号文章解析
+
+## [1.1.0] - 2026-10-25
+
+抓取方式与产出形态双双升级：抓取从 Agent 手里挪回代码，报告可选结构化输出。
+
+### 新增
+- **并发预取**（`app/crawler.py`）：`crawl_many()` 用 `ThreadPoolExecutor` 并发抓取，
+  默认 4 线程；`total_chars` 作为所有链接共享的正文预算按数量均摊，
+  单页下限 1500 字符，避免多链接把上下文撑爆。
+- **材料渲染**：`render_material()` 把抓取结果拼成带来源编号的文本块，
+  `parse_urls()` 支持 `-` / `*` 前缀与去重。
+- **结构化输出**（`app/models.py`）：`Report` / `ReportSection` 两级模型，
+  `--structured` 时撰稿人改用 `response_format={"type":"json_object"}`，
+  由 `save_structured()` 做 Pydantic 校验后写入 `output/report.json`。
+- **命令行动作**：`--workers`、`--total-chars`、`--no-prefetch`、`--structured`。
+
+### 变更
+- 研究员职责从「逐个调用爬虫工具」改为「基于预取材料提炼要点」；
+  工具仍然保留，仅在材料明显截断时用于补抓。
+- `build_agents()` 支持为撰稿人注入独立 LLM（结构化模式下的 json_object 实例）。
+- `build_tasks()` 新增 `use_material` 与 `structured` 参数；`output_pydantic`
+  因 DeepSeek 不支持而不再使用。
+
+### 修复
+- `.gitignore` 未忽略 `output/report.json`，导致结构化产物会被误提交。
+
+### 文档
+- README 补充并发预取的原理与实测数据（2 链接：20s vs 23s），
+  以及 DeepSeek 不支持 json_schema 的说明与绕行方案。
 
 ## [1.0.0] - 2026-10-25
 

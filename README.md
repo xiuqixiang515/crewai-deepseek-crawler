@@ -11,12 +11,13 @@ crewai-deepseek-crawler/
 ├── main.py               # 命令行入口（demo / crew / flow 三个模式）
 ├── smoke_test.py         # 无 Key、无网络的结构自检
 ├── app/
-│   ├── crawler.py        # 纯 Python 爬虫，不依赖 crewai，可单独测试
+│   ├── crawler.py        # 纯 Python 爬虫 + 并发抓取，不依赖 crewai，可单独测试
 │   ├── tools.py          # 把爬虫包装成 CrewAI 工具 crawl_webpage
-│   ├── llm.py            # DeepSeek 模型配置
+│   ├── llm.py            # DeepSeek 模型配置（含 json_object 模式）
+│   ├── models.py         # 结构化输出用的 Pydantic 模型
 │   ├── agents.py         # 两个角色：研究员 + 撰稿人
-│   ├── tasks.py          # 两个任务：抓取笔记 + 成稿
-│   ├── crew_def.py       # 组装 Crew
+│   ├── tasks.py          # 两个任务：整理材料 + 成稿
+│   ├── crew_def.py       # 组装 Crew，并在这里做并发预取
 │   └── flow_def.py       # 用 Flow 包一层：入口校验 → Crew → 质量闸门
 ├── samples/
 │   └── sample_article.html   # 离线样例，用来验证爬虫不用联网
@@ -100,7 +101,29 @@ python main.py crew --url https://example.com --url https://another-page.com
 
 报告会写到 `output/report.md`，同时在终端打印。想换路径用 `--out`，想调温度用 `--temp`。
 
-### 6. 跑 Flow 版本
+默认走**并发预取**：所有链接先在本地用线程池抓完（默认 4 并发），再把正文一次性交给 Agent，Agent 不再逐个调用工具。
+
+```bash
+# 关掉预取，退回「Agent 自己调工具」的老路子，用来做对比
+python main.py crew --no-prefetch --url https://a.com --url https://b.com
+
+# 调并发数与正文总预算（所有链接共享，按数量均摊）
+python main.py crew --workers 6 --total-chars 20000 --url https://a.com
+```
+
+### 6. 结构化输出（可入库）
+
+```bash
+python main.py crew --structured --url https://example.com
+```
+
+产出 `output/report.json`，字段固定为 `title / summary / key_points / sections / comparison / sources`（见 `app/models.py`），已经过 Pydantic 校验，可以直接 `db.insert(obj.model_dump())`。
+
+> ⚠️ **DeepSeek 不支持 CrewAI 的 `output_pydantic`**。它只接受 `response_format={"type":"json_object"}`，不接受 OpenAI 那种带 JSON Schema 的结构化输出，直接开 `output_pydantic` 会报
+> `This response_format type is unavailable now`。
+> 所以本项目改成：撰稿人用 json_object 模式输出 JSON，再由 `save_structured()` 用 Pydantic 校验并落盘。
+
+### 7. 跑 Flow 版本
 
 ```bash
 python main.py flow --url https://example.com
@@ -115,11 +138,19 @@ python main.py flow --url https://example.com
 **为什么爬虫和工具分成两个文件？**
 `crawler.py` 不 import crewai。这样 `demo` 模式在没装 crewai、没有 key、甚至断网的情况下都能跑，调试爬虫不用等 LLM 编排。这是最小项目里最值得保留的一个约束。
 
+**为什么抓取要前置到代码里？**
+爬虫是确定性的，不该让模型来调度。串行调用时，每个网址都要多一次完整 LLM 往返（把系统提示、任务、历史工具结果重发一遍），链接越多越亏。预取把这部分挪出 Agent，往返次数固定为 2 次。
+
+实测（2 个链接、同一台机器）：并发预取 20s，逐个调工具 23s。**差距没有想象中大**，因为 LLM 延迟占了大头；真正的收益在链接数变多、或目标站点响应慢的时候才明显 —— 串行时每次下载都要等，并行时只等最慢那一个。
+
 **为什么工具函数不抛异常？**
 `crawl_webpage` 抓取失败时返回 `[抓取失败] ...` 文本，而不是 raise。Agent 看到失败原因后能自己决定换链接还是跳过；抛异常会直接打断整个 Crew 执行。
 
 **为什么 `expected_output` 写得这么啰嗦？**
 CrewAI 里最影响成稿质量的不是模型，是 `Task.description` 和 `expected_output`。把「交付什么格式、不许做什么」写死，比反复调 prompt 有效得多。
+
+**为什么预取的正文可以安全地塞进任务描述？**
+CrewAI 的 `interpolate_only` 是「先扫描模板里的 `{变量}`，再 `str.replace`」，插入的值不会被二次解析。所以正文里出现花括号（代码片段里很常见）也不会炸。前提是模板里只写 `{material}`，不要让正文自己当模板。
 
 **为什么不用 `memory=True`？**
 CrewAI 的短期记忆默认要调 embedding 接口，会额外产生费用和失败点。这个项目的任务是一次性的，不需要记忆。要开的话记得配 embedding 模型。
@@ -159,13 +190,20 @@ DEEPSEEK_BASE_URL=http://localhost:11434
 **报告内容空泛 / 大量编造**
 先看研究员那一步的工具返回。如果多数链接返回 `[抓取失败]`，Agent 只能靠猜。常见原因是目标站点需要登录、正文由 JS 渲染，或者被反爬拦截。
 
+**`--structured` 报 `This response_format type is unavailable now`**
+这是 DeepSeek 不支持 OpenAI 的 json_schema 结构化输出。本项目已绕过（走 json_object + 本地校验），如果你自己写了 `output_pydantic` 就会撞上，删掉即可。
+
+**`--structured` 报「JSON 能解析但不符合 Report 结构」**
+模型偶尔会漏 `key_points` 或把 `sections` 写成字符串。直接重跑一次通常就好；反复失败的话，把 `app/tasks.py` 里 `_STRUCTURED_BRIEF` 的字段说明再写具体一点。
+
 **想只跑爬虫、不发请求给模型**
 `python main.py demo --url ...` 就是纯本地执行，零成本。
 
 ## 下一步可以加什么
 
 - **搜索工具**：现在需要你自己给链接。接一个 Serper / Bocha / Tavily，让研究员自己找资料。
-- **并发抓取**：`crawler.py` 里用 `concurrent.futures.ThreadPoolExecutor` 一次抓多个。
-- **PDF 解析**：给工具加一个分支，遇到 `.pdf` 走 `pypdf`。
-- **结构化输出**：把报告 Task 改成 `output_pydantic=ReportModel`，直接拿到 Python 对象入库。
+- **PDF / 公众号解析**：给爬虫加分支，遇到 `.pdf` 走 `pypdf`，遇到微信链接走专用解析。
+- **失败重试**：预取失败的链接，在 `crawl_many` 里做一次指数退避重试。
+- **入库**：`--structured` 已经产出 `Report` 对象，接 SQLite / Postgres 只需在 `save_structured` 后面加一行。
 - **人类审批**：在 `flow_def.py` 的 `quality_gate` 里插入 `@human_feedback`，或换回 LangGraph 的 `interrupt()`（CrewAI 的 HITL 更轻，但恢复语义弱一些）。
+
