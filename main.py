@@ -3,14 +3,17 @@
 用法:
     python main.py demo                      # 不需要 API Key，只测爬虫（默认抓本地样例）
     python main.py demo --url https://...    # 抓真实网页，验证网络与解析
+    python main.py crawl --url https://a --url https://b    # 只抓正文存档，零成本
     python main.py crew --url https://a --url https://b
-    python main.py crew --url https://a --structured      # 输出结构化 JSON
+    python main.py crew --url https://a --structured        # 输出结构化 JSON
     python main.py flow --url https://a --url https://b
 """
 
 from __future__ import annotations
 
 import argparse
+import json
+import re
 import sys
 from pathlib import Path
 
@@ -37,6 +40,110 @@ def _collect_urls(args) -> list[str]:
 
 def _to_input(urls: list[str]) -> str:
     return "\n".join(f"- {u}" for u in urls)
+
+
+def _slug(text: str, fallback: str) -> str:
+    """给文件名用的安全 slug，只保留字母数字与中文。"""
+    cleaned = re.sub(r"[^\w\u4e00-\u9fff-]+", "-", text or "").strip("-")
+    return (cleaned[:40] or fallback).strip("-")
+
+
+def cmd_crawl(args) -> int:
+    """只抓正文并存档，不调用任何模型，零成本。"""
+    from app.crawler import CrawlFailure, Page, crawl_many, parse_urls
+
+    urls = _collect_urls(args)
+    if not urls:
+        print("[错误] 至少给一个 --url，或用 --urls-file 指定列表文件")
+        return 2
+    urls = parse_urls("\n".join(urls))
+
+    # max_chars=0 表示不截断；否则所有链接共享预算
+    if args.max_chars > 0:
+        total_chars = args.max_chars * len(urls)
+    else:
+        total_chars = 10**9
+
+    from app.trace import RunTrace, set_active
+
+    tr = RunTrace(meta={"mode": "demo", "workers": args.workers})
+    set_active(tr)
+    results = crawl_many(urls, total_chars=total_chars, workers=args.workers)
+
+    pages = [r for r in results if isinstance(r, Page)]
+    failures = [r for r in results if isinstance(r, CrawlFailure)]
+
+    out = Path(args.out)
+    if args.split:
+        out.mkdir(parents=True, exist_ok=True)
+        saved: list[tuple[Page, Path]] = []
+        for i, page in enumerate(pages, 1):
+            name = f"{i:02d}-{_slug(page.title, 'page')}.{args.format}"
+            target = out / name
+            target.write_text(_render_page(page, args.format), encoding="utf-8")
+            saved.append((page, target))
+    else:
+        out.parent.mkdir(parents=True, exist_ok=True)
+        if args.format == "json":
+            payload = [
+                {
+                    "title": p.title,
+                    "url": p.url,
+                    "chars": p.chars,
+                    "truncated": p.truncated,
+                    "text": p.text,
+                }
+                for p in pages
+            ]
+            out.write_text(
+                json.dumps(payload, ensure_ascii=False, indent=2), encoding="utf-8"
+            )
+        else:
+            out.write_text(
+                "\n\n".join(_render_page(p, args.format) for p in pages), encoding="utf-8"
+            )
+        saved = [(p, out) for p in pages]
+
+    print("\n" + "=" * 68)
+    for i, page in enumerate(pages, 1):
+        flag = " 已截断" if page.truncated else ""
+        print(f"  [{i}] {page.chars:>6} 字符{flag}  {page.title[:40] or '(无标题)'}")
+    for i, fail in enumerate(failures, 1):
+        print(f"  [失败{i}] {fail.url}\n          {fail.reason[:70]}")
+    print("=" * 68)
+    print(f"成功 {len(pages)} / 失败 {len(failures)}，总耗时 {tr.total:.1f}s")
+    print(f"已保存: {out}{'（每页一个文件）' if args.split else ''}")
+
+    if pages and tr.total > 0:
+        try:
+            from app.viz import render_html
+
+            page = render_html(tr.to_dict(), ROOT / "output" / "crawl_timeline.html")
+            print(f"时间线: {page}")
+        except Exception:
+            pass
+
+    set_active(None)
+    return 0
+
+
+def _render_page(page, fmt: str) -> str:
+    if fmt == "json":
+        return json.dumps(
+            {
+                "title": page.title,
+                "url": page.url,
+                "chars": page.chars,
+                "truncated": page.truncated,
+                "text": page.text,
+            },
+            ensure_ascii=False,
+            indent=2,
+        )
+    if fmt == "txt":
+        return f"{page.title}\n{page.url}\n\n{page.text}\n"
+    # md（默认）
+    return f"# {page.title or '(无标题)'}\n\n> 来源：{page.url}\n\n{page.text}\n"
 
 
 def cmd_demo(args) -> int:
@@ -194,6 +301,16 @@ def build_parser() -> argparse.ArgumentParser:
     p_demo.add_argument("--preview", type=int, default=800, help="终端预览字符数")
     p_demo.add_argument("--workers", type=int, default=4, help="并发线程数，默认 4")
     p_demo.set_defaults(func=cmd_demo)
+
+    p_crawl = sub.add_parser("crawl", help="只抓正文存档，不调用模型（零成本）")
+    p_crawl.add_argument("--url", action="append", help="要抓的网址，可重复多次")
+    p_crawl.add_argument("--urls-file", help="网址列表文件，每行一个，# 开头为注释")
+    p_crawl.add_argument("--out", default=str(ROOT / "output" / "pages.md"), help="保存路径；--split 时视为目录")
+    p_crawl.add_argument("--format", choices=["md", "txt", "json"], default="md", help="保存格式，默认 md")
+    p_crawl.add_argument("--split", action="store_true", help="每个网页保存为独立文件")
+    p_crawl.add_argument("--max-chars", type=int, default=0, help="每页字符上限，0 表示不截断")
+    p_crawl.add_argument("--workers", type=int, default=4, help="并发线程数，默认 4")
+    p_crawl.set_defaults(func=cmd_crawl)
 
     p_crew = sub.add_parser("crew", help="跑完整 Crew（需要 DEEPSEEK_API_KEY）")
     add_common(p_crew)

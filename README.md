@@ -135,6 +135,43 @@ python main.py flow --url https://example.com
 
 > 一次传很多链接时，把它们写进一个 txt（每行一个，`#` 开头是注释），然后 `--urls-file urls.txt`。
 
+## 只爬内容（零成本，不调用模型）
+
+如果你只想把网页正文抓下来存着——不做摘要、不要报告——用 `crawl` 子命令。它完全不碰 LLM，不花钱，也不需要 API Key。
+
+```bash
+# 存成一个 Markdown 文件
+python main.py crawl --url https://example.com/a --url https://example.com/b
+
+# 每个网页一个文件，方便丢进别的工具
+python main.py crawl --split --out output/pages \
+  --url https://example.com/a --url https://example.com/b
+
+# 输出 JSON 数组，适合程序消费
+python main.py crawl --format json --out output/pages.json --url https://example.com/a
+
+# 不限长度（默认就是 0 = 不截断）
+python main.py crawl --max-chars 0 --url https://example.com/a
+
+# 从文件批量读链接
+python main.py crawl --urls-file urls.txt --split --out output/pages
+```
+
+参数速查：
+
+| 参数 | 说明 |
+|---|---|
+| `--url` | 可重复，或改用 `--urls-file` |
+| `--out` | 默认 `output/pages.md`；`--split` 时当作目录 |
+| `--format` | `md`（默认）/ `txt` / `json` |
+| `--split` | 每页一个文件，文件名 `01-标题.md` |
+| `--max-chars` | 每页字符上限，`0` 表示不截断（默认） |
+| `--workers` | 并发线程数，默认 4 |
+
+跑完会打印成功/失败清单，并额外生成 `output/crawl_timeline.html` 时间线。
+
+> 说明：输出的是**按 DOM 文本节点逐行排列的正文**，不是排版还原。所以会看到「作者：」和「阮一峰」各占一行——这是正常的，保留原始断行对下游 LLM 处理更友好。要阅读体验更好的版本，得换 Readability 之类的正文抽取算法。
+
 ## 可视化
 
 分两层，都不引入新依赖。

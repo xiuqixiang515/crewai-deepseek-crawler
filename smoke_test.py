@@ -101,11 +101,23 @@ tr.add("crew_start")
 tr.add("task_end", name="研究", agent="研究员", chars=500)
 tr.add("task_end", name="报告", agent="撰稿人", chars=900)
 
-page = render_html(tr.to_dict(), "output/_viz_smoke.html")
-html_text = page.read_text(encoding="utf-8")
+html_path = render_html(tr.to_dict(), "output/_viz_smoke.html")
+html_text = html_path.read_text(encoding="utf-8")
 assert "一次运行的全过程" in html_text
 assert html_text.count('rx="4"') >= 4, "时间线条形缺失"
 assert tr.summary()["links"] == 2 and tr.summary()["failed"] == 1
 print(f"{len(html_text)} 字符 HTML，含 2 条抓取 + 2 段 Agent")
+
+print("[12] 抓取存档格式：", end=" ")
+from main import _render_page, _slug
+
+md = _render_page(page, "md")
+txt = _render_page(page, "txt")
+js = _render_page(page, "json")
+assert md.startswith("# ") and "> 来源：" in md
+assert js.startswith("{") and '"text"' in js
+assert _slug("科技爱好者周刊（第 285 期）", "x") == "科技爱好者周刊-第-285-期"
+assert _slug("!!!", "fallback") == "fallback"
+print("md / txt / json 三种格式与文件名 slug 均正常")
 
 print("\n全部通过：项目结构可用，缺的只是真实 API Key。")

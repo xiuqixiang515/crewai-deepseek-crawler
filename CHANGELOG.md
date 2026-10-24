@@ -12,6 +12,21 @@
 - 预取失败的链接支持指数退避重试
 - PDF 与微信公众号文章解析
 
+## [1.3.0] - 2026-10-25
+
+新增 `crawl` 子命令：只抓正文存档，完全不调用模型。
+
+### 新增
+- `python main.py crawl`：并发抓取网页并保存正文，零 token 成本、无需 API Key。
+  - `--format md|txt|json`，默认 Markdown
+  - `--split` 每页独立文件，文件名形如 `01-标题.md`
+  - `--max-chars 0` 表示不截断（默认）
+  - `--out` / `--urls-file` / `--workers` 与其它子命令一致
+- 抓取结束自动生成 `output/crawl_timeline.html`，复用 v1.2.0 的时间线渲染。
+
+### 变更
+- 主入口帮助文本与模块 docstring 补充 `crawl` 用法。
+
 ## [1.2.0] - 2026-10-25
 
 新增运行可视化：终端实时进度 + 运行结束自动生成 HTML 时间线。
