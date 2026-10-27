@@ -11,6 +11,7 @@ import time
 from pathlib import Path
 
 _active: "RunTrace | None" = None
+_sink = None
 
 
 class RunTrace:
@@ -115,8 +116,19 @@ def get_active() -> RunTrace | None:
     return _active
 
 
+def set_sink(fn) -> None:
+    """注册一个进度订阅者（如网页端的日志面板）。传 None 取消。"""
+    global _sink
+    _sink = fn
+
+
 def progress(message: str) -> None:
-    """终端里打一行紧凑进度，形如 [  1.2s] 文本。"""
+    """终端里打一行紧凑进度，形如 [  1.2s] 文本；同时推给订阅者。"""
     trace = get_active()
     elapsed = trace.total if trace else 0.0
     print(f"[{elapsed:>6.1f}s] {message}")
+    if _sink is not None:
+        try:
+            _sink(message, elapsed)
+        except Exception:  # 订阅者出错不能影响主流程
+            pass

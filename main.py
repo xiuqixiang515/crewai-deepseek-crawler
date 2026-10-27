@@ -7,6 +7,7 @@
     python main.py crew --url https://a --url https://b
     python main.py crew --url https://a --structured        # 输出结构化 JSON
     python main.py flow --url https://a --url https://b
+    python main.py web                       # 打开本地网页界面
 """
 
 from __future__ import annotations
@@ -280,6 +281,13 @@ def cmd_flow(args) -> int:
     return 0
 
 
+def cmd_web(args) -> int:
+    from app.web import serve
+
+    serve(host=args.host, port=args.port, open_browser=not args.no_open)
+    return 0
+
+
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
         prog="crewai-deepseek-crawler",
@@ -327,6 +335,12 @@ def build_parser() -> argparse.ArgumentParser:
     p_viz.add_argument("--input", default=str(ROOT / "output" / "run.json"), help="轨迹 JSON 路径")
     p_viz.add_argument("--out", default=str(ROOT / "output" / "run.html"), help="HTML 输出路径")
     p_viz.set_defaults(func=cmd_viz)
+
+    p_web = sub.add_parser("web", help="启动本地网页界面（不用记命令）")
+    p_web.add_argument("--port", type=int, default=8765, help="端口，默认 8765")
+    p_web.add_argument("--host", default="127.0.0.1", help="监听地址，默认仅本机")
+    p_web.add_argument("--no-open", action="store_true", help="不自动打开浏览器")
+    p_web.set_defaults(func=cmd_web)
 
     return parser
 

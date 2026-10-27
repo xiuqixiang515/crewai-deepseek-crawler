@@ -37,6 +37,7 @@ def build_crew(
     workers: int = DEFAULT_WORKERS,
     total_chars: int = DEFAULT_TOTAL_CHARS,
     trace: trace_mod.RunTrace | None = None,
+    verbose: bool = True,
 ) -> tuple[Crew, dict]:
     """返回 (crew, inputs)。
 
@@ -68,9 +69,8 @@ def build_crew(
         elapsed = time.perf_counter() - started
         ok, failed = summarize(results)
         material = render_material(results)
-        print(
-            f"[prefetch] {len(targets)} 个链接并发抓取完成："
-            f"{ok} 成功 / {failed} 失败，用时 {elapsed:.1f}s"
+        trace_mod.progress(
+            f"并发抓取完成：{ok} 成功 / {failed} 失败，用时 {elapsed:.1f}s"
             f"（正文合计 {len(material)} 字符）"
         )
 
@@ -90,7 +90,7 @@ def build_crew(
         agents=[researcher, writer],
         tasks=[research_task, report_task],
         process=Process.sequential,
-        verbose=True,
+        verbose=verbose,
         memory=False,
         task_callback=tr.task_callback,
     )

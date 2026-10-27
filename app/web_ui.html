@@ -1,0 +1,292 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>网页抓取与报告 · 本地界面</title>
+<style>
+*{box-sizing:border-box}
+body{margin:0;background:#F4F2EC;color:#2C2C2A;
+ font-family:system-ui,-apple-system,"Segoe UI","Microsoft YaHei",sans-serif;line-height:1.6}
+.wrap{max-width:1140px;margin:0 auto;padding:26px 22px 64px}
+header{display:flex;align-items:baseline;gap:12px;margin-bottom:4px}
+h1{font-size:20px;font-weight:600;margin:0}
+.hint{font-size:12px;color:#888780}
+.grid{display:grid;grid-template-columns:430px 1fr;gap:16px;margin-top:18px}
+@media(max-width:920px){.grid{grid-template-columns:1fr}}
+.panel{background:#fff;border:1px solid #E5E3DC;border-radius:12px;padding:16px 18px}
+.panel h2{font-size:13px;font-weight:600;margin:0 0 12px;color:#2C2C2A}
+.pills{display:flex;gap:8px;margin-bottom:14px}
+.pill{flex:1;text-align:center;font-size:13px;padding:8px 10px;border-radius:8px;
+ border:1px solid #E5E3DC;background:#FAF9F5;color:#5F5E5A;cursor:pointer;user-select:none}
+.pill.on{background:#E6F1FB;border-color:#85B7EB;color:#0C447C;font-weight:600}
+label.f{display:block;font-size:12px;color:#888780;margin:12px 0 6px}
+textarea{width:100%;min-height:132px;resize:vertical;border:1px solid #E5E3DC;border-radius:8px;
+ padding:10px 12px;font-size:13px;font-family:ui-monospace,Menlo,Consolas,monospace;
+ color:#2C2C2A;background:#fff;outline:none}
+textarea:focus{border-color:#85B7EB}
+.row{display:flex;gap:10px;flex-wrap:wrap;align-items:center;margin-top:10px}
+.row label{font-size:12px;color:#5F5E5A;display:flex;align-items:center;gap:5px}
+input[type=number]{width:64px;border:1px solid #E5E3DC;border-radius:6px;padding:5px 8px;font-size:13px}
+select{border:1px solid #E5E3DC;border-radius:6px;padding:5px 8px;font-size:13px;background:#fff}
+button{margin-top:16px;width:100%;padding:11px;border:0;border-radius:9px;background:#185FA5;
+ color:#fff;font-size:14px;font-weight:600;cursor:pointer;transition:background .15s}
+button:hover{background:#0C447C}
+button:disabled{background:#B4B2A9;cursor:not-allowed}
+.stats{display:grid;grid-template-columns:repeat(4,1fr);gap:8px;margin-bottom:12px}
+.stat{background:#FAF9F5;border:1px solid #F1EFE8;border-radius:8px;padding:7px 10px}
+.stat .k{font-size:10px;color:#B4B2A9}
+.stat .v{font-size:16px;font-weight:600;font-variant-numeric:tabular-nums}
+#log{height:330px;overflow:auto;background:#FBFAF6;border:1px solid #F1EFE8;border-radius:8px;
+ padding:8px 10px;font-family:ui-monospace,Menlo,Consolas,monospace;font-size:12px;line-height:1.75}
+#log div{white-space:pre-wrap;word-break:break-all}
+#log .t{color:#B4B2A9;margin-right:8px}
+#log .crawl{color:#2C2C2A}
+#log .done{color:#3B6D11}
+#log .error{color:#A32D2D}
+#log .info{color:#5F5E5A}
+.empty{color:#B4B2A9;font-size:12px;text-align:center;padding:24px 0}
+.result{margin-top:16px}
+.cards{display:grid;grid-template-columns:repeat(auto-fill,minmax(300px,1fr));gap:12px}
+.card{background:#FAF9F5;border:1px solid #E5E3DC;border-radius:10px;padding:12px 14px}
+.card .t{font-size:13px;font-weight:600;margin-bottom:4px}
+.card .u{font-size:11px;color:#185FA5;word-break:break-all;margin-bottom:6px}
+.card .m{font-size:11px;color:#888780}
+.card .p{font-size:12px;color:#5F5E5A;margin-top:8px;max-height:90px;overflow:hidden}
+.bad{background:#FCEBEB;border-color:#F7C1C1}
+.bad .t{color:#A32D2D}
+.files{display:flex;flex-wrap:wrap;gap:8px;margin-top:12px}
+.files a{font-size:12px;padding:5px 11px;border-radius:999px;background:#E6F1FB;
+ border:1px solid #B5D4F4;color:#0C447C;text-decoration:none}
+.files a:hover{background:#B5D4F4}
+pre.report{background:#FBFAF6;border:1px solid #F1EFE8;border-radius:8px;padding:14px;
+ font-size:12.5px;line-height:1.75;white-space:pre-wrap;word-break:break-word;max-height:520px;overflow:auto}
+iframe{border:1px solid #E5E3DC;border-radius:10px;width:100%;height:560px;background:#fff}
+.err{background:#FCEBEB;border:1px solid #F7C1C1;color:#791F1F;border-radius:8px;
+ padding:10px 12px;font-size:12.5px;white-space:pre-wrap}
+.tag{font-size:11px;padding:2px 8px;border-radius:999px;background:#EAF3DE;color:#3B6D11;border:1px solid #C0DD97}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header>
+    <h1>网页内容抓取与调研报告</h1>
+    <span class="hint">本地运行 · 抓取不花钱 · 报告走 DeepSeek</span>
+  </header>
+
+  <div class="grid">
+    <section class="panel">
+      <h2>1. 选择要做什么</h2>
+      <div class="pills">
+        <div class="pill on" data-mode="crawl">只抓正文</div>
+        <div class="pill" data-mode="crew">生成报告</div>
+      </div>
+
+      <label class="f">2. 粘贴网址（一行一个）</label>
+      <textarea id="urls" placeholder="https://example.com/article-1&#10;https://example.com/article-2"></textarea>
+
+      <div class="row" id="opts-crawl">
+        <label>线程 <input type="number" id="workers" value="4" min="1" max="8"></label>
+        <label>格式
+          <select id="format">
+            <option value="md">Markdown</option>
+            <option value="txt">纯文本</option>
+            <option value="json">JSON</option>
+          </select>
+        </label>
+        <label><input type="checkbox" id="split"> 每页单独存</label>
+      </div>
+
+      <div class="row" id="opts-crew" style="display:none">
+        <label>线程 <input type="number" id="workers2" value="4" min="1" max="8"></label>
+        <label><input type="checkbox" id="structured"> 结构化 JSON</label>
+      </div>
+
+      <button id="run">开始</button>
+      <div class="hint" id="note" style="margin-top:8px">只抓正文不会调用模型，不产生费用。</div>
+    </section>
+
+    <section class="panel">
+      <h2>过程</h2>
+      <div class="stats">
+        <div class="stat"><div class="k">状态</div><div class="v" id="s-state">待开始</div></div>
+        <div class="stat"><div class="k">成功</div><div class="v" id="s-ok">—</div></div>
+        <div class="stat"><div class="k">失败</div><div class="v" id="s-bad">—</div></div>
+        <div class="stat"><div class="k">耗时</div><div class="v" id="s-time">—</div></div>
+      </div>
+      <div id="log"><div class="empty">运行后这里会显示每个网址的抓取进度</div></div>
+    </section>
+  </div>
+
+  <section class="panel result" id="result" style="display:none">
+    <h2>结果</h2>
+    <div id="result-body"></div>
+  </section>
+</div>
+
+<script>
+let mode = "crawl";
+let jobId = null;
+let seen = 0;
+let timer = null;
+
+const $ = (id) => document.getElementById(id);
+
+document.querySelectorAll(".pill").forEach((p) => {
+  p.addEventListener("click", () => {
+    document.querySelectorAll(".pill").forEach((x) => x.classList.remove("on"));
+    p.classList.add("on");
+    mode = p.dataset.mode;
+    $("opts-crawl").style.display = mode === "crawl" ? "flex" : "none";
+    $("opts-crew").style.display = mode === "crew" ? "flex" : "none";
+    $("note").textContent = mode === "crawl"
+      ? "只抓正文不会调用模型，不产生费用。"
+      : "生成报告会调用 DeepSeek，按 token 计费（通常几分钱）。";
+  });
+});
+
+function addLog(e) {
+  const box = $("log");
+  if (box.querySelector(".empty")) box.innerHTML = "";
+  const line = document.createElement("div");
+  line.className = e.kind || "info";
+  line.innerHTML = `<span class="t">${e.t.toFixed(1)}s</span>${escapeHtml(e.msg)}`;
+  box.appendChild(line);
+  box.scrollTop = box.scrollHeight;
+}
+
+function escapeHtml(s) {
+  return String(s).replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
+}
+
+function setState(text) { $("s-state").textContent = text; }
+
+async function run() {
+  const urls = $("urls").value.split("\n").map((s) => s.trim()).filter(Boolean);
+  if (!urls.length) { alert("先粘贴至少一个网址"); return; }
+
+  $("run").disabled = true;
+  $("log").innerHTML = "";
+  $("result").style.display = "none";
+  $("s-ok").textContent = "—";
+  $("s-bad").textContent = "—";
+  $("s-time").textContent = "—";
+  setState("运行中");
+  seen = 0;
+
+  const t0 = Date.now();
+  timer = setInterval(() => {
+    $("s-time").textContent = ((Date.now() - t0) / 1000).toFixed(1) + "s";
+  }, 100);
+
+  const payload = mode === "crawl"
+    ? { mode, urls, workers: +$("workers").value, format: $("format").value, split: $("split").checked }
+    : { mode, urls, workers: +$("workers2").value, structured: $("structured").checked };
+
+  const res = await fetch("/api/run", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(payload),
+  });
+  const data = await res.json();
+  if (!res.ok) {
+    addLog({ t: 0, msg: data.error || "请求失败", kind: "error" });
+    finish();
+    return;
+  }
+  jobId = data.job;
+  poll();
+}
+
+async function poll() {
+  if (!jobId) return;
+  const res = await fetch(`/api/job/${jobId}`);
+  const job = await res.json();
+
+  for (let i = seen; i < job.events.length; i++) addLog(job.events[i]);
+  seen = job.events.length;
+
+  if (job.status === "done") {
+    finish();
+    render(job);
+    return;
+  }
+  setTimeout(poll, 400);
+}
+
+function finish() {
+  clearInterval(timer);
+  $("run").disabled = false;
+  setState("完成");
+}
+
+function render(job) {
+  const box = $("result-body");
+  $("result").style.display = "block";
+
+  if (job.error) {
+    $("s-state").textContent = "出错";
+    box.innerHTML = `<div class="err">${escapeHtml(job.error)}</div>`;
+    return;
+  }
+
+  const r = job.result || {};
+  if (job.mode === "crawl") {
+    const pages = r.pages || [];
+    const failed = r.failed || [];
+    $("s-ok").textContent = pages.length;
+    $("s-bad").textContent = failed.length;
+    $("s-time").textContent = (r.seconds || 0) + "s";
+
+    const cards = pages.map((p) => `
+      <div class="card">
+        <div class="t">${escapeHtml(p.title || "(无标题)")}</div>
+        <div class="u">${escapeHtml(p.url)}</div>
+        <div class="m">${p.chars.toLocaleString()} 字符${p.truncated ? " · 已截断" : ""}</div>
+        <div class="p">${escapeHtml(p.preview)}</div>
+      </div>`).join("");
+
+    const bads = failed.map((f) => `
+      <div class="card bad">
+        <div class="t">抓取失败</div>
+        <div class="u">${escapeHtml(f.url)}</div>
+        <div class="p">${escapeHtml(f.reason)}</div>
+      </div>`).join("");
+
+    const files = (r.files || []).map((f) =>
+      `<a href="${f.url}" target="_blank">打开 ${escapeHtml(f.name)}</a>`).join("");
+
+    box.innerHTML = `<div class="cards">${cards}${bads}</div><div class="files">${files}</div>`;
+    return;
+  }
+
+  $("s-ok").textContent = "—";
+  $("s-bad").textContent = "—";
+  $("s-time").textContent = (r.seconds || 0).toFixed ? r.seconds.toFixed(1) + "s" : r.seconds + "s";
+
+  const files = (r.files || []).map((f) =>
+    `<a href="${f.url}" target="_blank">打开 ${escapeHtml(f.name)}</a>`).join("");
+
+  let body = "";
+  if (r.structured && r.report) {
+    const rep = r.report;
+    body = `<h2 style="margin-top:4px">${escapeHtml(rep.title)}</h2>
+      <p style="font-size:13px;color:#5F5E5A">${escapeHtml(rep.summary)}</p>
+      <ul style="font-size:13px">${(rep.key_points || []).map((k) => `<li>${escapeHtml(k)}</li>`).join("")}</ul>
+      <p style="font-size:12px;color:#888780">${escapeHtml(rep.comparison)}</p>`;
+  } else if (r.report_text) {
+    body = `<pre class="report">${escapeHtml(r.report_text)}</pre>`;
+  }
+
+  const timeline = r.timeline
+    ? `<div style="margin-top:14px"><div class="hint" style="margin-bottom:6px">抓取与 Agent 阶段的时间线</div>
+       <iframe src="${r.timeline}"></iframe></div>`
+    : "";
+
+  box.innerHTML = body + `<div class="files">${files}</div>` + timeline;
+}
+
+$("run").addEventListener("click", run);
+</script>
+</body>
+</html>

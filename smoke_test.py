@@ -120,4 +120,11 @@ assert _slug("科技爱好者周刊（第 285 期）", "x") == "科技爱好者�
 assert _slug("!!!", "fallback") == "fallback"
 print("md / txt / json 三种格式与文件名 slug 均正常")
 
+print("[13] 网页界面：", end=" ")
+from app import web
+
+assert "/api/run" in web.INDEX_HTML and len(web.INDEX_HTML) > 5000
+assert hasattr(web, "Handler") and callable(web.serve)
+print(f"前端 {len(web.INDEX_HTML):,} 字符，路由与处理器就绪")
+
 print("\n全部通过：项目结构可用，缺的只是真实 API Key。")
