@@ -42,6 +42,8 @@ class RunTrace:
     def summary(self) -> dict:
         crawls = self._pair_crawls()
         tasks = [e for e in self.events if e["kind"] == "task_end"]
+        llm = [e for e in self.events if e["kind"] == "llm_call"]
+        tools = [e for e in self.events if e["kind"] == "tool_call"]
         wall = max((c["end"] for c in crawls), default=0.0) - min(
             (c["start"] for c in crawls), default=0.0
         )
@@ -54,6 +56,12 @@ class RunTrace:
             "crawl_wall": round(max(wall, 0.0), 2),
             "task_seconds": round(tasks[-1]["t"] - self._crew_start(), 2) if tasks else 0.0,
             "total_seconds": self.total,
+            "llm_calls": len(llm),
+            "tool_calls": len(tools),
+            "prompt_tokens": sum(int(e.get("prompt") or 0) for e in llm),
+            "completion_tokens": sum(int(e.get("completion") or 0) for e in llm),
+            "total_tokens": sum(int(e.get("total") or 0) for e in llm),
+            "cached_tokens": sum(int(e.get("cached") or 0) for e in llm),
         }
 
     def _crew_start(self) -> float:
@@ -95,6 +103,9 @@ class RunTrace:
             "events": self.events,
             "crawls": self._pair_crawls(),
             "tasks": [e for e in self.events if e["kind"] == "task_end"],
+            "llm_calls": [e for e in self.events if e["kind"] == "llm_call"],
+            "tool_calls": [e for e in self.events if e["kind"] == "tool_call"],
+            "agents": [e for e in self.events if e["kind"] in ("agent_start", "agent_done")],
             "crew_start": self._crew_start(),
         }
 

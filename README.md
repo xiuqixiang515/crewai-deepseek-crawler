@@ -19,6 +19,7 @@ crewai-deepseek-crawler/
 │   ├── tasks.py          # 两个任务：整理材料 + 成稿
 │   ├── crew_def.py       # 组装 Crew，并在这里做并发预取
 │   ├── trace.py          # 运行轨迹记录：抓取与 Agent 的耗时点
+│   ├── observer.py       # 订阅 CrewAI 事件总线，采集 LLM/工具/Agent 步骤
 │   ├── viz.py            # 把轨迹渲染成自包含 HTML 时间线
 │   ├── web.py            # 本地网页界面的服务端（标准库 http.server）
 │   ├── web_ui.html       # 界面本身（单文件，无框架）
@@ -245,6 +246,45 @@ python main.py demo \
 ```bash
 python main.py viz --input output/run.json --out output/run.html
 ```
+
+## 过程观察（Agent 每一步在干什么）
+
+除了"抓了多久、出了什么"，还能看到 Agent 内部的三类动作：**Agent 开始/结束、每次 LLM 调用（含 token）、每次工具调用**。
+
+```
+[   5.3s] Agent 开始：网页资料研究员
+[  14.5s] LLM #1 · 3,514 in / 1,562 out · 9.2s
+[  14.6s] Agent 完成：网页资料研究员，输出 2,641 字符
+[  14.6s] Agent 开始：中文分析报告撰稿人
+[  21.4s] LLM #2 · 1,925 in / 1,309 out · 6.8s
+[  21.4s] Agent 完成：中文分析报告撰稿人，输出 2,253 字符
+```
+
+同一份数据会出现在三处：
+
+| 位置 | 形式 |
+|---|---|
+| 终端 | 上面这种逐行日志 |
+| 网页界面 | 「过程明细」列表 + Token 统计卡片 |
+| `output/run.html` | 「LLM 调用明细」表格（输入/输出/缓存/耗时）+ 顶部 Token 卡片 |
+
+**实现原理**：订阅 CrewAI 的事件总线，而不是靠解析控制台输出。
+
+```python
+from crewai.events import crewai_event_bus
+from crewai.events.types.llm_events import LLMCallCompletedEvent
+
+@crewai_event_bus.on(LLMCallCompletedEvent)
+def on_llm_done(source, event):
+    usage = event.usage or {}      # {"prompt_tokens": 3514, "completion_tokens": 1562, ...}
+    ...
+```
+
+监听的事件共 6 个：`LLMCallStarted/Completed`、`ToolUsageStarted/Finished`、`AgentExecutionStarted/Completed`。
+观察器放在 `app/observer.py`，只在需要时 import——这样 `crawler.py` 依然不依赖 crewai。
+
+> 注意：`cached_tokens` 取的是 provider 返回的缓存命中数。DeepSeek 自己的字段叫 `prompt_cache_hit_tokens`，
+> 经 LiteLLM 转换后可能拿不到，显示为 `—` 是正常的，不影响费用估算（按输入/输出 token 算即可）。
 
 ## 关键设计说明
 

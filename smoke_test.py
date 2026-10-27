@@ -127,4 +127,14 @@ assert "/api/run" in web.INDEX_HTML and len(web.INDEX_HTML) > 5000
 assert hasattr(web, "Handler") and callable(web.serve)
 print(f"前端 {len(web.INDEX_HTML):,} 字符，路由与处理器就绪")
 
+print("[14] 事件观察器：", end=" ")
+from app.observer import CrewObserver
+
+obs = CrewObserver()
+obs.attach()
+bound = len(obs._bound)
+obs.detach()
+assert bound >= 4, f"只绑定到 {bound} 个事件，CrewAI 事件类型可能与预期不符"
+print(f"绑定 {bound} 个事件（LLM/工具/Agent），可正常解绑")
+
 print("\n全部通过：项目结构可用，缺的只是真实 API Key。")

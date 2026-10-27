@@ -12,6 +12,30 @@
 - 预取失败的链接支持指数退避重试
 - PDF 与微信公众号文章解析
 
+## [1.5.0] - 2026-10-25
+
+过程观察：能看到 Agent 的每一步，而不只是最终报告。
+
+### 新增
+- **事件观察器**（`app/observer.py`）：订阅 CrewAI 事件总线，采集
+  - `AgentExecutionStarted/Completed` → Agent 起止与输出长度
+  - `LLMCallStarted/Completed` → 每次调用的输入/输出 token、缓存命中、耗时
+  - `ToolUsageStarted/Finished` → 工具名、耗时、是否返回失败
+  独立模块，保证 `crawler.py` 仍不依赖 crewai。
+- **`run_crew()` 封装**：统一在 kickoff 前后挂载/卸载观察器，CLI、Web、Flow 三处共用。
+- **轨迹扩展**：`RunTrace.summary()` 增加 `llm_calls` / `tool_calls` /
+  `prompt_tokens` / `completion_tokens` / `cached_tokens`。
+- **时间线页面**：新增「LLM 调用明细」表格与 Token 统计卡片（五卡布局）。
+- **网页界面**：新增 Token 统计位与「过程明细」列表（按时间轴展示 Agent/LLM/工具三类步骤）。
+
+### 变更
+- `build_crew()` 不再直接 `kickoff`，改由 `run_crew()` 包裹。
+- 时间线中的 Agent 标签截断长度从 6 字放宽到 9 字，避免「网页资料研究」这种断尾。
+
+### 已知限制
+- `cached_tokens` 依赖 provider 返回字段，DeepSeek 经 LiteLLM 转换后通常为 0，
+  页面显示 `—`，不影响输入/输出 token 的准确性。
+
 ## [1.4.0] - 2026-10-25
 
 新增本地网页界面：`python main.py web`，不用记命令。

@@ -91,7 +91,7 @@ def _timeline_svg(data: dict) -> str:
     prev = crew_start
     for t in tasks:
         end = float(t["t"])
-        name = (t.get("agent") or t.get("name") or "task")[:6]
+        name = (t.get("agent") or t.get("name") or "task")[:9]
         bar(y, prev, end, "#534AB7", name, f"{end - prev:.1f}s")
         prev = end
         y += 30
@@ -136,12 +136,45 @@ def _cards(summary: dict) -> str:
             "失败不会中断流程",
         ),
         ("提取正文", f"{summary.get('chars', 0):,}", "字符数，已剔除噪音"),
+        (
+            "LLM 调用",
+            f"{summary.get('llm_calls', 0)}",
+            f"{summary.get('prompt_tokens', 0):,} in / {summary.get('completion_tokens', 0):,} out",
+        ),
         ("总耗时", f"{summary.get('total_seconds', 0):.1f}s", "含抓取与模型调用"),
     ]
     return "".join(
         f'<div class="card"><div class="k">{k}</div><div class="v">{v}</div>'
         f'<div class="d">{d}</div></div>'
         for k, v, d in items
+    )
+
+
+def _llm_panel(data: dict) -> str:
+    calls = data.get("llm_calls", [])
+    if not calls:
+        return ""
+    rows = []
+    for c in calls:
+        cached = c.get("cached") or 0
+        rows.append(
+            f"<tr><td>{c.get('seq', '')}</td>"
+            f"<td class='num'>{int(c.get('prompt') or 0):,}</td>"
+            f"<td class='num'>{int(c.get('completion') or 0):,}</td>"
+            f"<td class='num'>{cached and format(cached, ',') or '—'}</td>"
+            f"<td class='num'>{float(c.get('duration') or 0):.2f}s</td></tr>"
+        )
+    total = data.get("summary", {})
+    return (
+        '<section class="panel"><h2>LLM 调用明细</h2>'
+        "<table><thead><tr><th>#</th><th>输入 token</th><th>输出 token</th>"
+        "<th>缓存命中</th><th>耗时</th></tr></thead><tbody>"
+        + "".join(rows)
+        + "</tbody></table>"
+        + f'<div class="pipehead" style="margin-top:10px">合计 '
+        f'{total.get("total_tokens", 0):,} tokens'
+        f'（缓存命中 {total.get("cached_tokens", 0):,}）</div>'
+        "</section>"
     )
 
 
@@ -204,7 +237,8 @@ h2{font-size:14px;font-weight:600;margin:0 0 14px;color:#2C2C2A}
  border:1px solid #E5E3DC;color:#5F5E5A}
 .chip.ok{background:#EAF3DE;border-color:#C0DD97;color:#3B6D11}
 .chip.bad{background:#FCEBEB;border-color:#F7C1C1;color:#A32D2D}
-.cards{display:grid;grid-template-columns:repeat(4,1fr);gap:12px;margin-bottom:22px}
+.cards{display:grid;grid-template-columns:repeat(5,1fr);gap:12px;margin-bottom:22px}
+@media(max-width:760px){.cards{grid-template-columns:repeat(2,1fr)}}
 .card{background:#fff;border:1px solid #E5E3DC;border-radius:12px;padding:14px 16px}
 .card .k{font-size:12px;color:#888780}
 .card .v{font-size:24px;font-weight:600;margin:2px 0 2px}
@@ -249,6 +283,7 @@ _TEMPLATE = """<!DOCTYPE html>
     <h2>时间线</h2>
     __SVG__
   </section>
+  __LLM_PANEL__
   <section class="panel">
     <h2>处理链路</h2>
     __PIPE__
@@ -285,6 +320,7 @@ def render_html(data: dict, out_path: str | Path) -> Path:
         .replace("__CHIPS__", chip_html)
         .replace("__CARDS__", _cards(summary))
         .replace("__SVG__", _timeline_svg(data))
+        .replace("__LLM_PANEL__", _llm_panel(data))
         .replace("__PIPE__", _pipeline(summary, meta))
         .replace("__ROWS__", _rows(data))
     )

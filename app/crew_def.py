@@ -97,6 +97,24 @@ def build_crew(
     return crew, {"urls": urls, "material": material}
 
 
+def run_crew(crew: Crew, inputs: dict, trace: trace_mod.RunTrace | None = None):
+    """跑 Crew，期间挂上事件观察器，把每一步写进轨迹。"""
+    from .observer import CrewObserver
+
+    tr = trace or trace_mod.get_active()
+    observer = CrewObserver()
+    observer.attach()
+    try:
+        if tr:
+            tr.add("crew_start")
+        result = crew.kickoff(inputs=inputs)
+        if tr:
+            tr.add("crew_end")
+        return result
+    finally:
+        observer.detach()
+
+
 def _extract_json(text: str) -> dict:
     """从模型输出里抠出 JSON，兼容 ```json 包裹和前后多余文字。"""
     raw = (text or "").strip()

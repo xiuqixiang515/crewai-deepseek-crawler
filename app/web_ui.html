@@ -33,7 +33,7 @@ button{margin-top:16px;width:100%;padding:11px;border:0;border-radius:9px;backgr
  color:#fff;font-size:14px;font-weight:600;cursor:pointer;transition:background .15s}
 button:hover{background:#0C447C}
 button:disabled{background:#B4B2A9;cursor:not-allowed}
-.stats{display:grid;grid-template-columns:repeat(4,1fr);gap:8px;margin-bottom:12px}
+.stats{display:grid;grid-template-columns:repeat(5,1fr);gap:8px;margin-bottom:12px}
 .stat{background:#FAF9F5;border:1px solid #F1EFE8;border-radius:8px;padding:7px 10px}
 .stat .k{font-size:10px;color:#B4B2A9}
 .stat .v{font-size:16px;font-weight:600;font-variant-numeric:tabular-nums}
@@ -64,6 +64,14 @@ pre.report{background:#FBFAF6;border:1px solid #F1EFE8;border-radius:8px;padding
 iframe{border:1px solid #E5E3DC;border-radius:10px;width:100%;height:560px;background:#fff}
 .err{background:#FCEBEB;border:1px solid #F7C1C1;color:#791F1F;border-radius:8px;
  padding:10px 12px;font-size:12.5px;white-space:pre-wrap}
+.steps{margin-top:14px;border:1px solid #F1EFE8;border-radius:8px;background:#FBFAF6;padding:10px 12px;max-height:280px;overflow:auto}
+.steps .h{font-size:11px;color:#888780;margin-bottom:6px}
+.step{display:flex;gap:10px;font-size:12px;line-height:1.9;
+ font-family:ui-monospace,Menlo,Consolas,monospace;word-break:break-all}
+.step .tt{color:#B4B2A9;min-width:46px;text-align:right;flex:none}
+.step.agent{color:#534AB7;font-weight:600}
+.step.llm{color:#185FA5}
+.step.tool{color:#993C1D}
 .tag{font-size:11px;padding:2px 8px;border-radius:999px;background:#EAF3DE;color:#3B6D11;border:1px solid #C0DD97}
 </style>
 </head>
@@ -112,6 +120,7 @@ iframe{border:1px solid #E5E3DC;border-radius:10px;width:100%;height:560px;backg
         <div class="stat"><div class="k">状态</div><div class="v" id="s-state">待开始</div></div>
         <div class="stat"><div class="k">成功</div><div class="v" id="s-ok">—</div></div>
         <div class="stat"><div class="k">失败</div><div class="v" id="s-bad">—</div></div>
+        <div class="stat"><div class="k">Token</div><div class="v" id="s-token">—</div></div>
         <div class="stat"><div class="k">耗时</div><div class="v" id="s-time">—</div></div>
       </div>
       <div id="log"><div class="empty">运行后这里会显示每个网址的抓取进度</div></div>
@@ -170,6 +179,7 @@ async function run() {
   $("result").style.display = "none";
   $("s-ok").textContent = "—";
   $("s-bad").textContent = "—";
+  $("s-token").textContent = "—";
   $("s-time").textContent = "—";
   setState("运行中");
   seen = 0;
@@ -262,10 +272,15 @@ function render(job) {
 
   $("s-ok").textContent = "—";
   $("s-bad").textContent = "—";
+  const st = r.stats || {};
+  $("s-token").textContent = st.total_tokens ? st.total_tokens.toLocaleString() : "—";
   $("s-time").textContent = (r.seconds || 0).toFixed ? r.seconds.toFixed(1) + "s" : r.seconds + "s";
 
   const files = (r.files || []).map((f) =>
     `<a href="${f.url}" target="_blank">打开 ${escapeHtml(f.name)}</a>`).join("");
+
+  const steps = (r.steps || []).map((s) =>
+    `<div class="step ${s.kind}"><span class="tt">${s.t.toFixed(1)}s</span><span>${escapeHtml(s.text)}</span></div>`).join("");
 
   let body = "";
   if (r.structured && r.report) {
@@ -278,12 +293,16 @@ function render(job) {
     body = `<pre class="report">${escapeHtml(r.report_text)}</pre>`;
   }
 
+  const stepPanel = steps
+    ? `<div class="steps"><div class="h">过程明细：${st.llm_calls || 0} 次 LLM 调用 · ${st.total_tokens ? st.total_tokens.toLocaleString() + " tokens" : ""}</div>${steps}</div>`
+    : "";
+
   const timeline = r.timeline
     ? `<div style="margin-top:14px"><div class="hint" style="margin-bottom:6px">抓取与 Agent 阶段的时间线</div>
        <iframe src="${r.timeline}"></iframe></div>`
     : "";
 
-  box.innerHTML = body + `<div class="files">${files}</div>` + timeline;
+  box.innerHTML = body + stepPanel + `<div class="files">${files}</div>` + timeline;
 }
 
 $("run").addEventListener("click", run);

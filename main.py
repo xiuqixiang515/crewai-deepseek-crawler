@@ -195,7 +195,7 @@ def cmd_demo(args) -> int:
 
 
 def cmd_crew(args) -> int:
-    from app.crew_def import build_crew, save_structured
+    from app.crew_def import build_crew, run_crew, save_structured
     from app.models import Report
     from app.trace import RunTrace, set_active
     from app.viz import render_html
@@ -227,9 +227,7 @@ def cmd_crew(args) -> int:
     print(f"抓取方式: {'并发预取' if not args.no_prefetch else 'Agent 逐个调用工具'}")
     print(f"输出形态: {mode} | 目标链接 {len(urls)} 个 | 写入 {out}\n")
 
-    tr.add("crew_start")
-    result = crew.kickoff(inputs=inputs)
-    tr.add("crew_end")
+    result = run_crew(crew, inputs, tr)
 
     print("\n" + "=" * 68)
     if args.structured:

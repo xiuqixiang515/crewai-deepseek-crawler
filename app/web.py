@@ -121,7 +121,7 @@ def _run_crawl(job: dict, urls: list[str], workers: int, fmt: str, split: bool) 
 
 
 def _run_crew(job: dict, urls: list[str], structured: bool, workers: int) -> None:
-    from .crew_def import build_crew, save_structured
+    from .crew_def import build_crew, run_crew, save_structured
     from .models import Report
 
     try:
@@ -143,9 +143,7 @@ def _run_crew(job: dict, urls: list[str], structured: bool, workers: int) -> Non
             verbose=False,
         )
         _log(job, "进入 Crew：研究员整理 → 撰稿人成稿", "info")
-        tr.add("crew_start")
-        result = crew.kickoff(inputs=inputs)
-        tr.add("crew_end")
+        result = run_crew(crew, inputs, tr)
 
         files = [_file_entry(out)]
         entry: dict = {"files": files, "seconds": tr.total, "structured": structured}
@@ -171,6 +169,42 @@ def _run_crew(job: dict, urls: list[str], structured: bool, workers: int) -> Non
         run_html = render_html(tr.to_dict(), OUTPUT / "run.html")
         files.append(_file_entry(run_html))
         entry["timeline"] = _file_entry(run_html)["url"]
+
+        # 过程观察：把 Agent / LLM / 工具三类事件按时间排成一条可读的步骤流
+        steps: list[dict] = []
+        for e in tr.events:
+            kind = e["kind"]
+            if kind == "agent_start":
+                steps.append({"kind": "agent", "t": e["t"], "text": f"Agent 开始 · {e.get('role', '')}"})
+            elif kind == "agent_done":
+                steps.append(
+                    {
+                        "kind": "agent",
+                        "t": e["t"],
+                        "text": f"Agent 完成 · {e.get('role', '')} · 输出 {int(e.get('chars') or 0):,} 字符",
+                    }
+                )
+            elif kind == "llm_call":
+                steps.append(
+                    {
+                        "kind": "llm",
+                        "t": e["t"],
+                        "text": (
+                            f"LLM #{e.get('seq')} · {int(e.get('prompt') or 0):,} in / "
+                            f"{int(e.get('completion') or 0):,} out · {e.get('duration', 0):.1f}s"
+                        ),
+                    }
+                )
+            elif kind == "tool_call":
+                steps.append(
+                    {
+                        "kind": "tool",
+                        "t": e["t"],
+                        "text": f"工具 {e.get('name', '')} · {e.get('duration', 0):.1f}s",
+                    }
+                )
+        entry["steps"] = steps
+        entry["stats"] = tr.summary()
 
         job["result"] = entry
         _log(job, f"Crew 完成，用时 {tr.total:.1f}s", "done")
